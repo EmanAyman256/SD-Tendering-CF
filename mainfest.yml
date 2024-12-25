@@ -1,9 +1,7 @@
 applications:
-- name: tendering
+- name: tendering-app-dev
   instances: 1
   memory: 1000MB
   buildpacks:
     - staticfile_buildpack
   path: dist/btp-sd-app
-
-
