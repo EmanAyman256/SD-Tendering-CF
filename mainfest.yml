@@ -1,5 +1,5 @@
 applications:
-- name: tendering-app-dev
+- name: tendering-app-test
   instances: 1
   memory: 512MB
   buildpacks:
