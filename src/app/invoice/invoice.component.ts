@@ -208,6 +208,11 @@ export class InvoiceComponent {
           this.itemText=this.mainItemsRecords[0].salesQuotationItemText?this.mainItemsRecords[0].salesQuotationItemText:"";
           console.log(this.itemText);
         console.log(this.mainItemsRecords);
+        console.log(this.mainItemsRecords[0].subItems);
+        console.log(this.mainItemsRecords[0].subItems.length);
+
+
+        
         this.loading = false;
         this.totalValue = this.mainItemsRecords.reduce((sum, record) => sum + record.totalWithProfit, 0);
         console.log('Total Value:', this.totalValue);

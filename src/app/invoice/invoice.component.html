@@ -67,36 +67,36 @@
 
     <ng-template pTemplate="header">
         <tr>
-            <th style="min-width: 10rem;"> </th>
-            <th style="min-width: 10rem;">
+            <th pResizableColumn style="min-width: 10rem;"> </th>
+            <th style="min-width: 10rem;" pResizableColumn>
                 <!-- <p-checkbox (onChange)="onSelectAllRecords($event)" [value]="invoicesRecords"></p-checkbox> -->
             </th>
-            <th style="min-width: 10rem;">Print </th>
-            <th style="min-width: 10rem;"> MainItem.No </th>
-            <th style="min-width: 10rem;"> SubItem.No </th>
-            <th style="min-width: 10rem;">ServiceNO.
+            <th style="min-width: 10rem;" pResizableColumn>Print </th>
+            <th style="min-width: 10rem;" pResizableColumn> MainItem.No </th>
+            <th style="min-width: 10rem;" pResizableColumn> SubItem.No </th>
+            <th style="min-width: 10rem;" pResizableColumn>ServiceNO.
             </th>
-            <th style="min-width: 10rem;">Description </th>
-            <th style="min-width: 10rem;" pResizableColumn pSortableColumn="quantity">Quantity <p-sortIcon
+            <th style="min-width: 10rem;" pResizableColumn>Description </th>
+            <th style="min-width: 10rem;" pResizableColumn pResizableColumn pSortableColumn="quantity">Quantity <p-sortIcon
                     field="quantity" /></th>
-            <th style="min-width: 10rem;" pResizableColumn pSortableColumn="unitOfMeasurementCode">UOM <p-sortIcon
+            <th style="min-width: 10rem;" pResizableColumn pResizableColumn pSortableColumn="unitOfMeasurementCode">UOM <p-sortIcon
                     field="unitOfMeasurementCode" />
             </th>
-            <th style="min-width: 10rem;" pResizableColumn pSortableColumn="formulaCode">Formula <p-sortIcon
+            <th style="min-width: 10rem;" pResizableColumn pResizableColumn pSortableColumn="formulaCode">Formula <p-sortIcon
                     field="formulaCode" /> </th>
-            <th style="min-width: 10rem;">Parameters</th>
-            <th style="min-width: 10rem;" pResizableColumn pSortableColumn="amountPerUnit">AmountPerUnit <p-sortIcon
+            <th style="min-width: 10rem;" pResizableColumn>Parameters</th>
+            <th style="min-width: 10rem;" pResizableColumn pResizableColumn pSortableColumn="amountPerUnit">AmountPerUnit <p-sortIcon
                     field="amountPerUnit" /></th>
-            <th style="min-width: 10rem;" pResizableColumn pSortableColumn="currencyCode">Currency <p-sortIcon
+            <th style="min-width: 10rem;" pResizableColumn pResizableColumn pSortableColumn="currencyCode">Currency <p-sortIcon
                     field="currencyCode" /></th>
-            <th style="min-width: 10rem;" pResizableColumn pSortableColumn="total">Total <p-sortIcon field="total" />
+            <th style="min-width: 10rem;" pResizableColumn pResizableColumn pSortableColumn="total">Total <p-sortIcon field="total" />
             </th>
-            <th style="min-width: 10rem;">ProfitMargin % </th>
-            <th style="min-width: 10rem;" pResizableColumn pSortableColumn="amountPerUnitWithProfit">
+            <th style="min-width: 10rem;" pResizableColumn>ProfitMargin % </th>
+            <th style="min-width: 10rem;" pResizableColumn pResizableColumn pSortableColumn="amountPerUnitWithProfit">
                 AmountPerUnitWithProfit <p-sortIcon field="amountPerUnitWithProfit" /></th>
-            <th style="min-width: 10rem;" pResizableColumn pSortableColumn="totalWithProfit">TotalWithProfit <p-sortIcon
+            <th style="min-width: 10rem;" pResizableColumn pResizableColumn pSortableColumn="totalWithProfit">TotalWithProfit <p-sortIcon
                     field="totalWithProfit" /></th>
-            <th style="min-width: 10rem;">Actions</th>
+            <th style="min-width: 10rem;" pResizableColumn>Actions</th>
         </tr>
     </ng-template>
     <ng-template pTemplate="body" let-mainItem let-editing="editing" let-ri="rowIndex" let-expanded="expanded">
@@ -105,6 +105,7 @@
             <td style="min-width: 10rem;">
                 <p-button type="button" pRipple [pRowToggler]="mainItem" [text]="true" [rounded]="true" [plain]="true"
                     [icon]="expanded ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                    <p-badge value=""  badgeSize="large" severity="success" *ngIf="mainItem.subItems.length"/>
             </td>
             <td style="min-width: 10rem;">
 
@@ -129,13 +130,13 @@
                     <ng-template pTemplate="input">
                         <p-dropdown [options]="recordsServiceNumber" [(ngModel)]="mainItem.serviceNumberCode"
                             [ngModelOptions]="{standalone: true}" optionValue="serviceNumberCode"
-                            optionLabel="description" [filter]="true" [filterFields]="['searchTerm','description']"
+                            optionLabel="description" [filter]="true" [filterFields]="['serviceNumberCode','description']"
                             [showClear]="true" placeholder="Select SeviceNumber" [appendTo]="'body'"
                             (onChange)="onServiceNumberUpdateChange($event)" [virtualScroll]="true"
                             [virtualScrollItemSize]="40">
                             <ng-template let-record pTemplate="item">
                                 <div class="flex align-items-center gap-2">
-                                    <div>{{ record.searchTerm }}::{{ record.description }}</div>
+                                    <div>{{ record.serviceNumberCode }}::{{ record.description }}</div>
                                 </div>
                             </ng-template>
                         </p-dropdown>
@@ -441,13 +442,13 @@
                                     <p-dropdown [options]="recordsServiceNumber" [(ngModel)]="subItem.serviceNumberCode"
                                         [ngModelOptions]="{standalone: true}" optionValue="serviceNumberCode"
                                         optionLabel="description" [filter]="true"
-                                        [filterFields]="['searchTerm','description']" [showClear]="true"
+                                        [filterFields]="['serviceNumberCode','description']" [showClear]="true"
                                         placeholder="Select SeviceNumber" [appendTo]="'body'"
                                         (onChange)="onServiceNumberUpdateChangeSubItem($event)" [virtualScroll]="true"
                                         [virtualScrollItemSize]="40">
                                         <ng-template let-record pTemplate="item">
                                             <div class="flex align-items-center gap-2">
-                                                <div>{{ record.searchTerm }}::{{ record.description }}</div>
+                                                <div>{{ record.serviceNumberCode }}::{{ record.description }}</div>
                                             </div>
                                         </ng-template>
                                     </p-dropdown>
@@ -641,13 +642,13 @@
                         <td style="min-width: 10.2rem;">
                             <p-dropdown [options]="recordsServiceNumber" [(ngModel)]="selectedServiceNumberSubItem"
                                 [ngModelOptions]="{standalone: true}" optionValue="serviceNumberCode"
-                                optionLabel="description" [filter]="true" [filterFields]="['searchTerm','description']"
+                                optionLabel="description" [filter]="true" [filterFields]="['serviceNumberCode','description']"
                                 [showClear]="true" placeholder="Select SeviceNumber"
                                 (onChange)="onServiceNumberChangeSubItem($event)" [appendTo]="'body'"
                                 [virtualScroll]="true" [virtualScrollItemSize]="40">
                                 <ng-template let-record pTemplate="item">
                                     <div class="flex align-items-center gap-2">
-                                        <div>{{ record.searchTerm }}::{{ record.description }}</div>
+                                        <div>{{ record.serviceNumberCode }}::{{ record.description }}</div>
                                     </div>
                                 </ng-template>
                             </p-dropdown>
@@ -785,12 +786,12 @@
             <td style="min-width: 10rem;">
                 <p-dropdown [options]="recordsServiceNumber" [(ngModel)]="selectedServiceNumber"
                     [ngModelOptions]="{standalone: true}" optionValue="serviceNumberCode" optionLabel="description"
-                    [filter]="true" [filterFields]="['searchTerm','description']" [showClear]="true"
+                    [filter]="true" [filterFields]="['serviceNumberCode','description']" [showClear]="true"
                     placeholder="Select SeviceNumber" (onChange)="onServiceNumberChange($event)" [appendTo]="'body'"
                     [virtualScroll]="true" [virtualScrollItemSize]="40">
                     <ng-template let-record pTemplate="item">
                         <div class="flex align-items-center gap-2">
-                            <div>{{ record.searchTerm }}::{{ record.description }}</div>
+                            <div>{{ record.serviceNumberCode }}::{{ record.description }}</div>
                         </div>
                     </ng-template>
                 </p-dropdown>

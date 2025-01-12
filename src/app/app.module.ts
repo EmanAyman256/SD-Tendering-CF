@@ -7,6 +7,9 @@ import { FundamentalNgxCoreModule } from '@fundamental-ngx/core';
 import { InputGroupModule } from '@fundamental-ngx/core/input-group';
 
 
+
+import { BadgeModule } from 'primeng/badge';
+
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { NgbModule } from '@ng-bootstrap/ng-bootstrap';
 import { CommonModule } from '@angular/common';
@@ -73,7 +76,7 @@ import { CloudDataComponent } from './cloud-data/cloud-data.component';
     HttpClientModule,
     CommonModule,
     AuthModule,
-
+    BadgeModule,
     ButtonModule,
     TableModule,
     DropdownModule,
