@@ -25,7 +25,7 @@
                 {{totalValue}}
             </div>
             <div class="col-2 border ">
-               SAR
+              {{cloudCurrency}}
             </div>
         </div>
     </div>
@@ -34,7 +34,7 @@
 <p-toast></p-toast>
 <!-- // |search:searchKey -->
 <p-table [value]="mainItemsRecords" dataKey="invoiceMainItemCode" [resizableColumns]="true"
-    [expandedRowKeys]="expandedRows" editMode="row" [rowHover]="true" [rows]="10" [showCurrentPageReport]="true"
+    [expandedRowKeys]="expandedRows" editMode="row"  [(selection)]="selectedTenderingMainItems" [rowHover]="true" [rows]="10" [showCurrentPageReport]="true"
     [rowsPerPageOptions]="[10, 25, 50]" [loading]="loading" [paginator]="true"
     currentPageReportTemplate="Showing {first} to {last} of {totalRecords} entries" [filterDelay]="0">
     <ng-template pTemplate="caption">
@@ -104,14 +104,18 @@
 
             <td style="min-width: 10rem;">
                 <p-button type="button" pRipple [pRowToggler]="mainItem" [text]="true" [rounded]="true" [plain]="true"
-                    [icon]="expanded ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-                    <p-badge value=""  badgeSize="large" severity="success" *ngIf="mainItem.subItems.length"/>
+                [icon]="expanded ? 'pi pi-chevron-down' : 'pi pi-chevron-right'">
+                <p-badge class="position-absolute badge" [value]="mainItem.subItems?.length"  badgeSize="large" severity="success" *ngIf="mainItem.subItems.length"/>
+
+            </p-button>
+                  
+
+
             </td>
             <td style="min-width: 10rem;">
-
-                <p-checkbox [value]="mainItem" [(ngModel)]="mainItem.selected"
-                    (onChange)="onMainItemSelection($event, mainItem)"></p-checkbox>
-
+                <p-tableCheckbox [value]="mainItem" />
+                <!-- <p-checkbox [value]="mainItem" [(ngModel)]="mainItem.selected"
+                    (onChange)="onMainItemSelection($event, mainItem)"></p-checkbox> -->
             </td>
             <td style="min-width: 10rem;">
 
@@ -273,7 +277,8 @@
             <td style="min-width: 9.5rem;">
                 <p-cellEditor>
                     <ng-template pTemplate="input">
-                        <p-dropdown [options]="recordsCurrency" [(ngModel)]="mainItem.currencyCode"
+                            {{cloudCurrency}}
+                        <!-- <p-dropdown [options]="recordsCurrency" [(ngModel)]="mainItem.currencyCode"
                             [ngModelOptions]="{standalone: true}" optionValue="code" optionLabel="code" [filter]="true"
                             [filterFields]="['code','description']" [showClear]="true" placeholder="Select Currency"
                             [required]="true" [appendTo]="'body'" [virtualScroll]="true" [virtualScrollItemSize]="40">
@@ -282,11 +287,11 @@
                                     <div>{{ record.code }}::{{ record.description }}</div>
                                 </div>
                             </ng-template>
-                        </p-dropdown>
+                        </p-dropdown> -->
 
                     </ng-template>
                     <ng-template pTemplate="output">
-                        {{ mainItem.currencyCode?mainItem.currencyCode:"SAR"}}
+                        {{ mainItem.currencyCode?mainItem.currencyCode: cloudCurrency }}
                     </ng-template>
                 </p-cellEditor>
             </td>
@@ -381,7 +386,7 @@
     <ng-template pTemplate="rowexpansion" let-mainItem>
         <td colspan="18">
             <p-table [value]="mainItem.subItems" dataKey="invoiceSubItemCode" [resizableColumns]="true" editMode="row"
-                [expandedRowKeys]="expandedRows" [rowHover]="true" [rows]="10" [showCurrentPageReport]="true"
+                [expandedRowKeys]="expandedRows" [rowHover]="true" selectionMode="multiple" [(selection)]="selectedTenderingSubItems" [rows]="10" [showCurrentPageReport]="true"
                 [rowsPerPageOptions]="[10, 25, 50]" [loading]="loadingSubItems" [paginator]="true"
                 currentPageReportTemplate="Showing {first} to {last} of {totalRecords} entries" [filterDelay]="0">
 
@@ -429,12 +434,13 @@
                         <td style="min-width: 10rem;"></td>
                         <td style="min-width: 10rem;">
                             {{ ri + 1 }}
+                            <p-tableCheckbox [value]="subItem" />
                             <!-- <input style="min-width: 1rem;" value="{{subItem.selected}}" type="checkbox"
                                 [(ngModel)]="subItem.selected" (change)="onSubItemSelection($event,subItem)"
                                 [checked]="subItem.selected"> -->
 
-                                <p-checkbox [value]="subItem" [(ngModel)]="subItem.selected"
-                    (onChange)="onSubItemSelection($event, subItem)"></p-checkbox>
+                                <!-- <p-checkbox [value]="subItem" [(ngModel)]="subItem.selected"
+                    (onChange)="onSubItemSelection($event, subItem)"></p-checkbox> -->
                         </td>
                         <td style="min-width: 9.5rem;">
                             <p-cellEditor>
@@ -580,7 +586,8 @@
                         <td style="min-width: 9.5rem;">
                             <p-cellEditor>
                                 <ng-template pTemplate="input">
-                                    <p-dropdown [options]="recordsCurrency" [(ngModel)]="subItem.currencyCode"
+                                    {{cloudCurrency}}
+                                    <!-- <p-dropdown [options]="recordsCurrency" [(ngModel)]="subItem.currencyCode"
                                         [ngModelOptions]="{standalone: true}" optionValue="code" optionLabel="code"
                                         [filter]="true" [filterFields]="['code','description']" [showClear]="true"
                                         placeholder="Select Currency" [required]="true" [appendTo]="'body'"
@@ -590,11 +597,11 @@
                                                 <div>{{ record.code }}::{{ record.description }}</div>
                                             </div>
                                         </ng-template>
-                                    </p-dropdown>
+                                    </p-dropdown> -->
 
                                 </ng-template>
                                 <ng-template pTemplate="output">
-                                    {{ subItem.currencyCode?subItem.currencyCode:"SAR" }}
+                                    {{ subItem.currencyCode?subItem.currencyCode: cloudCurrency }}
                                 </ng-template>
                             </p-cellEditor>
                         </td>
@@ -736,7 +743,8 @@
                                 [(ngModel)]="newSubItem.amountPerUnit">
                         </td>
                         <td style="min-width: 10.2rem;">
-                            <p-dropdown [options]="recordsCurrency" [(ngModel)]="selectedCurrencySubItem"
+                            {{cloudCurrency}}
+                            <!-- <p-dropdown [options]="recordsCurrency" [(ngModel)]="selectedCurrencySubItem"
                                 [ngModelOptions]="{standalone: true}" optionValue="code" optionLabel="code"
                                 [filter]="true" [filterFields]="['code','description']" [showClear]="true"
                                 placeholder="Select Currency" [required]="true" [appendTo]="'body'"
@@ -746,7 +754,7 @@
                                         <div>{{ record.code }}::{{ record.description }}</div>
                                     </div>
                                 </ng-template>
-                            </p-dropdown>
+                            </p-dropdown> -->
                         </td>
                         <td style="min-width: 10.2rem;">
                             <ng-container *ngIf="selectedFormulaRecordSubItem && resultAfterTest">
@@ -864,7 +872,8 @@
                     [(ngModel)]="newMainItem.amountPerUnit">
             </td>
             <td style="min-width: 10rem;">
-                <p-dropdown [options]="recordsCurrency" [(ngModel)]="selectedCurrency"
+                {{cloudCurrency}}
+                <!-- <p-dropdown [options]="recordsCurrency" [(ngModel)]="selectedCurrency"
                     [ngModelOptions]="{standalone: true}" optionValue="code" optionLabel="code" [filter]="true"
                     [filterFields]="['code','description']" [showClear]="true" placeholder="Select Currency"
                     [required]="true" [appendTo]="'body'" [virtualScroll]="true" [virtualScrollItemSize]="40">
@@ -873,7 +882,7 @@
                             <div>{{ record.code }}::{{ record.description }}</div>
                         </div>
                     </ng-template>
-                </p-dropdown>
+                </p-dropdown> -->
             </td>
             <td style="min-width: 10rem;">
                 <ng-container *ngIf="selectedFormulaRecord && resultAfterTest">
