@@ -38,6 +38,8 @@ import { TooltipModule } from 'primeng/tooltip';
 import { InputTextModule } from 'primeng/inputtext';
 import { RadioButtonModule } from 'primeng/radiobutton';
 
+import { FileUploadModule } from 'primeng/fileupload';
+
 
 import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
@@ -97,6 +99,7 @@ import { CloudDataComponent } from './cloud-data/cloud-data.component';
     TreeTableModule,
     TooltipModule,
     InputTextModule,
+    FileUploadModule,
 
     NgHttpLoaderModule.forRoot(),
   ],

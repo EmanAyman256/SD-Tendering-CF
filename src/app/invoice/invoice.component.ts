@@ -8,6 +8,10 @@ import { ServiceMaster } from '../models/service-master.model';
 import { UnitOfMeasure } from '../models/unitOfMeasure.model';
 import { Formula } from '../models/formulas.model';
 import { Router } from '@angular/router';
+import { ModelEntity, ModelSpecDetails } from '../models/model-specs.model';
+import { forkJoin } from 'rxjs';
+import * as XLSX from 'xlsx';
+import { main } from '@popperjs/core';
 
 @Component({
   selector: 'app-invoice-test',
@@ -21,12 +25,22 @@ export class InvoiceComponent {
   documentNumber!: number;
   itemNumber!: number;
   customerId!: number;
-  cloudCurrency!:string;
+  cloudCurrency!: string;
   savedDBApp: boolean = false;
 
   itemText: string = '';
 
   savedInMemory: boolean = false;
+
+
+  displayImportsDialog = false;
+  displayModelSpecsDialog = false;
+  displayModelSpecsDetailsDialog = false;
+  displayExcelDialog = false;
+
+  selectedModelSpecsDetails: ModelSpecDetails[] = [];
+  models: ModelEntity[] = [];
+  modelSpecsDetails: ModelSpecDetails[] = [];
 
   // Pagination:
   loading: boolean = true;
@@ -42,6 +56,8 @@ export class InvoiceComponent {
   //fields for dropdown lists
   recordsServiceNumber!: ServiceMaster[];
   selectedServiceNumberRecord?: ServiceMaster;
+  selectedServiceNumberRecordForModels?: ServiceMaster;
+  selectedServiceNumberRecordForExcel?: ServiceMaster;
   selectedServiceNumber!: number;
   updateSelectedServiceNumber!: number;
   updateSelectedServiceNumberRecord?: ServiceMaster;
@@ -91,6 +107,926 @@ export class InvoiceComponent {
   mainItemsRecords: MainItem[] = [];
   subItemsRecords: SubItem[] = [];
 
+  constructor(
+    private cdr: ChangeDetectorRef,
+    private router: Router,
+    private _ApiService: ApiService,
+    private _InvoiceService: InvoiceService,
+    private messageService: MessageService,
+    private confirmationService: ConfirmationService
+  ) {
+    this.documentNumber =
+      this.router.getCurrentNavigation()?.extras.state?.['documentNumber'];
+    this.itemNumber =
+      this.router.getCurrentNavigation()?.extras.state?.['itemNumber'];
+    this.customerId =
+      this.router.getCurrentNavigation()?.extras.state?.['customerId'];
+    this.cloudCurrency = this.router.getCurrentNavigation()?.extras.state?.['currency'];
+    console.log(this.documentNumber, this.itemNumber, this.customerId, this.currency);
+  }
+
+  ngOnInit() {
+    this._ApiService
+      .get<ServiceMaster[]>('servicenumbers')
+      .subscribe((response) => {
+        this.recordsServiceNumber = response;
+        //.filter(record => record.deletionIndicator === false);
+      });
+    this._ApiService.get<any[]>('formulas').subscribe((response) => {
+      this.recordsFormula = response;
+    });
+    this._ApiService.get<any[]>('currencies').subscribe((response) => {
+      this.recordsCurrency = response;
+    });
+    this._ApiService.get<any[]>('measurements').subscribe((response) => {
+      this.recordsUnitOfMeasure = response;
+    });
+    if (this.savedInMemory) {
+      this.mainItemsRecords = [
+        ...this._InvoiceService.getMainItems(this.documentNumber),
+      ];
+      console.log(this.mainItemsRecords);
+    }
+    if (this.savedDBApp) {
+      this.getCloudDocument();
+    } else {
+      this.getCloudDocument();
+    }
+
+    this._ApiService.get<SubItem[]>('subitems').subscribe((response) => {
+      this.subItemsRecords = response;
+      this.loadingSubItems = false;
+    });
+  }
+
+  getCloudDocument() {
+    //localhost:8080/mainitems/referenceid?referenceId=20000000&salesQuotationItem=20
+    this._ApiService
+      .get<MainItem[]>(
+        `mainitems/referenceid?referenceId=${this.documentNumber}&salesQuotationItem=${this.itemNumber}`
+      )
+      .subscribe({
+        next: (res) => {
+          this.mainItemsRecords = res
+            .map((item) => ({ ...item, isPersisted: true }))
+            .sort((a, b) => a.invoiceMainItemCode - b.invoiceMainItemCode);
+          this.itemText = this.mainItemsRecords[0].salesQuotationItemText
+            ? this.mainItemsRecords[0].salesQuotationItemText
+            : '';
+          console.log(this.itemText);
+          console.log(this.mainItemsRecords);
+          console.log(this.mainItemsRecords[0].subItems);
+          console.log(this.mainItemsRecords[0].subItems.length);
+
+          this.loading = false;
+          this.totalValue = this.mainItemsRecords.reduce(
+            (sum, record) => sum + record.totalWithProfit,
+            0
+          );
+          console.log('Total Value:', this.totalValue);
+          // this.cdr.detectChanges();
+        },
+        error: (err) => {
+          console.log(err);
+          console.log(err.status);
+          if (err.status == 404) {
+            this.mainItemsRecords = [];
+            this.loading = false;
+            this.totalValue = this.mainItemsRecords.reduce(
+              (sum, record) => sum + record.totalWithProfit,
+              0
+            );
+            console.log('Total Value:', this.totalValue);
+            //this.cdr.detectChanges();
+          }
+        },
+        complete: () => { },
+      });
+  }
+
+  // search:
+  // originalMainItemsRecords: MainItem[] = []; // Keep a copy of the original records
+
+
+  filterRecords(): void {
+    // this.originalMainItemsRecords = [...this.mainItemsRecords];
+    if (this.searchKey && this.searchKey.trim() !== '') {
+      this.mainItemsRecords = this.mainItemsRecords.filter((record: any) =>
+        record.description.toLowerCase().includes(this.searchKey.toLowerCase())
+      );
+    } else {
+      //  this.mainItemsRecords = [...this.originalMainItemsRecords];
+      console.log("else");
+
+      this.mainItemsRecords = [...this.mainItemsRecords];
+      console.log(this.mainItemsRecords);
+
+    }
+  }
+
+
+  // Imports ()
+  showImportsDialog() {
+    this.displayImportsDialog = true;
+  }
+  showExcelDialog() {
+    this.displayExcelDialog = true;
+  }
+  showModelSpecsDialog() {
+    this.displayModelSpecsDialog = true;
+    this._ApiService.get<ModelEntity[]>(`modelspecs`).subscribe({
+      next: (res) => {
+        // const uniqueRecords = res.filter(newRecord => 
+        //   !this.mainItemsRecords.some(existingRecord => 
+        //     existingRecord.invoiceMainItemCode === newRecord.modelSpecCode
+        //   )
+        // );
+        this.models = res.sort((a, b) => a.modelSpecCode - b.modelSpecCode);
+        console.log(this.models);
+      }
+      , error: (err) => {
+        console.log(err);
+      },
+      complete: () => {
+      }
+    });
+  }
+  showModelSpecsDetailsDialog(model: ModelEntity) {
+    this.displayModelSpecsDetailsDialog = true;
+    const detailObservables = model.modelSpecDetailsCode.map(code =>
+      this._ApiService.getID<ModelSpecDetails>('modelspecdetails', code)
+    );
+    forkJoin(detailObservables).subscribe(records => {
+      this.modelSpecsDetails = records.sort((a, b) => b.modelSpecDetailsCode - a.modelSpecDetailsCode);
+    });
+  }
+  saveSelectionModelSpecsDetails() {
+    console.log('Selected items:', this.selectedModelSpecsDetails);
+    this.displayModelSpecsDetailsDialog = false;
+    this.displayModelSpecsDialog = false;
+    this.displayImportsDialog = false;
+  }
+
+  // for selected models specs details:
+  saveModelSpecsDetails(mainItem: ModelSpecDetails) {
+    console.log(mainItem);
+    if (this.selectedServiceNumberRecordForModels && this.selectedFormulaRecord && this.resultAfterTest) {
+      const newRecord: MainItem = {
+        //
+        invoiceMainItemCode: 0,
+        //
+        serviceNumberCode: mainItem.serviceNumberCode,
+        unitOfMeasurementCode: this.selectedServiceNumberRecordForModels.unitOfMeasurementCode,
+        currencyCode: mainItem.currencyCode,
+        description: this.selectedServiceNumberRecordForModels.description,
+
+        formulaCode: this.selectedFormula,
+        quantity: this.resultAfterTest,
+        // quantity: item.quantity,
+        amountPerUnit: mainItem.grossPrice,
+        total: mainItem.netValue,
+        profitMargin: mainItem.profitMargin,
+        totalWithProfit: mainItem.totalWithProfit,
+        // doNotPrint: mainItem.doNotPrint,
+        Type: '',
+        isPersisted: false,
+        subItems: []
+      }
+      console.log(newRecord);
+      if (newRecord.quantity === 0) {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: ' Quantity is required',
+          life: 3000
+        });
+      }
+      else {
+        console.log(newRecord);
+        //................
+        const bodyRequest: any = {
+          quantity: newRecord.quantity,
+          amountPerUnit: newRecord.amountPerUnit,
+        };
+        if (newRecord.profitMargin && newRecord.profitMargin !== 0) {
+          bodyRequest.profitMargin = newRecord.profitMargin;
+        }
+        this._ApiService.post<any>(`/total`, bodyRequest).subscribe({
+          next: (res) => {
+            console.log('mainitem with total:', res);
+            newRecord.total = res.total;
+            newRecord.amountPerUnitWithProfit = res.amountPerUnitWithProfit;
+            newRecord.totalWithProfit = res.totalWithProfit;
+            console.log(' Record:', newRecord);
+            const filteredRecord = Object.fromEntries(
+              Object.entries(newRecord).filter(([_, value]) => {
+                return value !== '' && value !== 0 && value !== undefined && value !== null;
+              })
+            ) as MainItem;
+            console.log(filteredRecord);
+            this.addMainItem(filteredRecord);
+
+            this.mainItemsRecords = [...this.mainItemsRecords];
+            this.savedInMemory = true;
+            this.updateTotalValueAfterAction();
+            console.log(this.mainItemsRecords);
+            this.resetNewMainItem();
+            this.selectedServiceNumberRecordForModels = undefined;
+            this.selectedFormula = '';
+            this.selectedFormulaRecord = undefined;
+            this.resultAfterTest = undefined;
+
+            const index = this.selectedModelSpecsDetails.findIndex(item => item.modelSpecDetailsCode === mainItem.modelSpecDetailsCode);
+            if (index !== -1) {
+              this.selectedModelSpecsDetails.splice(index, 1);
+            }
+          }, error: (err) => {
+            console.log(err);
+          },
+          complete: () => {
+          }
+        });
+        //................
+      }
+    }
+    if (!this.selectedServiceNumberRecordForModels && this.selectedFormulaRecord && this.resultAfterTest) {
+      const newRecord: MainItem = {
+        //
+        invoiceMainItemCode: 0,
+        //
+        serviceNumberCode: mainItem.serviceNumberCode,
+        unitOfMeasurementCode: mainItem.unitOfMeasurementCode,
+        currencyCode: mainItem.currencyCode,
+        description: mainItem.shortText,
+
+        formulaCode: this.selectedFormula,
+        quantity: this.resultAfterTest,
+        // quantity: item.quantity,
+        amountPerUnit: mainItem.grossPrice,
+        total: mainItem.netValue,
+        profitMargin: mainItem.profitMargin,
+        totalWithProfit: mainItem.totalWithProfit,
+        // doNotPrint: mainItem.doNotPrint,
+        Type: '',
+        isPersisted: false,
+        subItems: []
+      }
+      console.log(newRecord);
+      if (newRecord.quantity === 0) {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: ' Quantity is required',
+          life: 3000
+        });
+      }
+      else {
+        console.log(newRecord);
+        //................
+        const bodyRequest: any = {
+          quantity: newRecord.quantity,
+          amountPerUnit: newRecord.amountPerUnit,
+        };
+        if (newRecord.profitMargin && newRecord.profitMargin !== 0) {
+          bodyRequest.profitMargin = newRecord.profitMargin;
+        }
+        this._ApiService.post<any>(`/total`, bodyRequest).subscribe({
+          next: (res) => {
+            console.log('mainitem with total:', res);
+            newRecord.total = res.total;
+            newRecord.amountPerUnitWithProfit = res.amountPerUnitWithProfit;
+            newRecord.totalWithProfit = res.totalWithProfit;
+            console.log(' Record:', newRecord);
+            const filteredRecord = Object.fromEntries(
+              Object.entries(newRecord).filter(([_, value]) => {
+                return value !== '' && value !== 0 && value !== undefined && value !== null;
+              })
+            ) as MainItem;
+            console.log(filteredRecord);
+            this.addMainItem(filteredRecord);
+
+            this.mainItemsRecords = [...this.mainItemsRecords];
+            this.savedInMemory = true;
+            this.updateTotalValueAfterAction();
+            console.log(this.mainItemsRecords);
+            this.resetNewMainItem();
+            this.selectedServiceNumberRecordForModels = undefined;
+            this.selectedFormula = '';
+            this.selectedFormulaRecord = undefined;
+            this.resultAfterTest = undefined;
+
+            const index = this.selectedModelSpecsDetails.findIndex(item => item.modelSpecDetailsCode === mainItem.modelSpecDetailsCode);
+            if (index !== -1) {
+              this.selectedModelSpecsDetails.splice(index, 1);
+            }
+          }, error: (err) => {
+            console.log(err);
+          },
+          complete: () => {
+          }
+        });
+        //................
+      }
+    }
+    if (this.selectedServiceNumberRecordForModels && !this.selectedFormulaRecord && !this.resultAfterTest) {
+      const newRecord: MainItem = {
+        //
+        invoiceMainItemCode: 0,
+        //
+        serviceNumberCode: mainItem.serviceNumberCode,
+        unitOfMeasurementCode: this.selectedServiceNumberRecordForModels.unitOfMeasurementCode,
+        currencyCode: mainItem.currencyCode,
+        description: this.selectedServiceNumberRecordForModels.description,
+
+        formulaCode: mainItem.formulaCode,
+        quantity: mainItem.quantity,
+        amountPerUnit: mainItem.grossPrice,
+        total: mainItem.netValue,
+        profitMargin: mainItem.profitMargin,
+        totalWithProfit: mainItem.totalWithProfit,
+        // doNotPrint: mainItem.doNotPrint,
+        Type: '',
+        isPersisted: false,
+        subItems: []
+      }
+      console.log(newRecord);
+      if (newRecord.quantity === 0) {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: ' Quantity is required',
+          life: 3000
+        });
+      }
+      else {
+        console.log(newRecord);
+        //................
+        const bodyRequest: any = {
+          quantity: newRecord.quantity,
+          amountPerUnit: newRecord.amountPerUnit,
+        };
+        if (newRecord.profitMargin && newRecord.profitMargin !== 0) {
+          bodyRequest.profitMargin = newRecord.profitMargin;
+        }
+        this._ApiService.post<any>(`/total`, bodyRequest).subscribe({
+          next: (res) => {
+            console.log('mainitem with total:', res);
+            newRecord.total = res.total;
+            newRecord.amountPerUnitWithProfit = res.amountPerUnitWithProfit;
+            newRecord.totalWithProfit = res.totalWithProfit;
+            console.log(' Record:', newRecord);
+            const filteredRecord = Object.fromEntries(
+              Object.entries(newRecord).filter(([_, value]) => {
+                return value !== '' && value !== 0 && value !== undefined && value !== null;
+              })
+            ) as MainItem;
+            console.log(filteredRecord);
+            this.addMainItem(filteredRecord);
+
+            this.mainItemsRecords = [...this.mainItemsRecords];
+            this.savedInMemory = true;
+            this.updateTotalValueAfterAction();
+            console.log(this.mainItemsRecords);
+            this.resetNewMainItem();
+            this.selectedServiceNumberRecordForModels = undefined;
+            this.selectedFormula = '';
+            this.selectedFormulaRecord = undefined;
+            this.resultAfterTest = undefined;
+
+            const index = this.selectedModelSpecsDetails.findIndex(item => item.modelSpecDetailsCode === mainItem.modelSpecDetailsCode);
+            if (index !== -1) {
+              this.selectedModelSpecsDetails.splice(index, 1);
+            }
+          }, error: (err) => {
+            console.log(err);
+          },
+          complete: () => {
+          }
+        });
+        //................
+      }
+    }
+    if (!this.selectedServiceNumberRecordForModels && !this.selectedFormulaRecord && !this.resultAfterTest) {
+      const newRecord: MainItem = {
+        //
+        invoiceMainItemCode: 0,
+        //
+        serviceNumberCode: mainItem.serviceNumberCode,
+        unitOfMeasurementCode: mainItem.unitOfMeasurementCode,
+        currencyCode: mainItem.currencyCode,
+        description: mainItem.shortText,
+
+        formulaCode: mainItem.formulaCode,
+        quantity: mainItem.quantity,
+        amountPerUnit: mainItem.grossPrice,
+        total: mainItem.netValue,
+        profitMargin: mainItem.profitMargin,
+        totalWithProfit: mainItem.totalWithProfit,
+        // doNotPrint: mainItem.doNotPrint,
+        Type: '',
+        isPersisted: false,
+        subItems: []
+      }
+      console.log(newRecord);
+      if (newRecord.quantity === 0) {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: ' Quantity is required',
+          life: 3000
+        });
+      }
+      else {
+        console.log(newRecord);
+        //................
+        const bodyRequest: any = {
+          quantity: newRecord.quantity,
+          amountPerUnit: newRecord.amountPerUnit,
+        };
+        if (newRecord.profitMargin && newRecord.profitMargin !== 0) {
+          bodyRequest.profitMargin = newRecord.profitMargin;
+        }
+        this._ApiService.post<any>(`/total`, bodyRequest).subscribe({
+          next: (res) => {
+            console.log('mainitem with total:', res);
+            newRecord.total = res.total;
+            newRecord.amountPerUnitWithProfit = res.amountPerUnitWithProfit;
+            newRecord.totalWithProfit = res.totalWithProfit;
+            console.log(' Record:', newRecord);
+            const filteredRecord = Object.fromEntries(
+              Object.entries(newRecord).filter(([_, value]) => {
+                return value !== '' && value !== 0 && value !== undefined && value !== null;
+              })
+            ) as MainItem;
+            console.log(filteredRecord);
+            this.addMainItem(filteredRecord);
+
+            this.mainItemsRecords = [...this.mainItemsRecords];
+            this.savedInMemory = true;
+            this.updateTotalValueAfterAction();
+            console.log(this.mainItemsRecords);
+            this.resetNewMainItem();
+            this.selectedServiceNumberRecordForModels = undefined;
+            this.selectedFormula = '';
+            this.selectedFormulaRecord = undefined;
+            this.resultAfterTest = undefined;
+
+            const index = this.selectedModelSpecsDetails.findIndex(item => item.modelSpecDetailsCode === mainItem.modelSpecDetailsCode);
+            if (index !== -1) {
+              this.selectedModelSpecsDetails.splice(index, 1);
+            }
+          }, error: (err) => {
+            console.log(err);
+          },
+          complete: () => {
+          }
+        });
+        //................
+      }
+    }
+
+  }
+  cancelModelSpecsDetails(item: any): void {
+    this.selectedModelSpecsDetails = this.selectedModelSpecsDetails.filter(i => i !== item);
+  }
+  // for selected from excel sheet:
+  saveMainItemFromExcel(mainItem: MainItem) {
+    console.log(mainItem);
+    if (this.selectedServiceNumberRecordForExcel && this.selectedFormulaRecord && this.resultAfterTest) {
+      const newRecord: MainItem = {
+        //
+        invoiceMainItemCode: 0,
+        //
+        serviceNumberCode: mainItem.serviceNumberCode,
+        unitOfMeasurementCode: this.selectedServiceNumberRecordForExcel.unitOfMeasurementCode,
+        currencyCode: mainItem.currencyCode,
+        description: this.selectedServiceNumberRecordForExcel.description,
+
+        formulaCode: this.selectedFormula,
+        quantity: this.resultAfterTest,
+        // quantity: item.quantity,
+        amountPerUnit: mainItem.amountPerUnit,
+        total: mainItem.total,
+        profitMargin: mainItem.profitMargin,
+        totalWithProfit: mainItem.totalWithProfit,
+        doNotPrint: mainItem.doNotPrint,
+        Type: '',
+        isPersisted: false,
+        // subItems: []
+        subItems: mainItem.subItems
+      }
+      console.log(newRecord);
+      if (newRecord.quantity === 0) {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: ' Quantity is required',
+          life: 3000
+        });
+      }
+      else {
+        console.log(newRecord);
+        //................
+        const bodyRequest: any = {
+          quantity: newRecord.quantity,
+          amountPerUnit: newRecord.amountPerUnit,
+        };
+        if (newRecord.profitMargin && newRecord.profitMargin !== 0) {
+          bodyRequest.profitMargin = newRecord.profitMargin;
+        }
+        this._ApiService.post<any>(`/total`, bodyRequest).subscribe({
+          next: (res) => {
+            console.log('mainitem with total:', res);
+            newRecord.total = res.total;
+            newRecord.amountPerUnitWithProfit = res.amountPerUnitWithProfit;
+            newRecord.totalWithProfit = res.totalWithProfit;
+            console.log(' Record:', newRecord);
+            const filteredRecord = Object.fromEntries(
+              Object.entries(newRecord).filter(([_, value]) => {
+                return value !== '' && value !== 0 && value !== undefined && value !== null;
+              })
+            ) as MainItem;
+            console.log(filteredRecord);
+            this.addMainItem(filteredRecord);
+
+            this.mainItemsRecords = [...this.mainItemsRecords];
+            this.savedInMemory = true;
+            this.updateTotalValueAfterAction();
+            console.log(this.mainItemsRecords);
+            this.resetNewMainItem();
+            this.selectedServiceNumberRecordForExcel = undefined;
+            this.selectedFormula = '';
+            this.selectedFormulaRecord = undefined;
+            this.resultAfterTest = undefined;
+
+            const index = this.parsedData.findIndex(item => item.invoiceMainItemCode === mainItem.invoiceMainItemCode);
+            if (index !== -1) {
+              this.parsedData.splice(index, 1);
+            }
+          }, error: (err) => {
+            console.log(err);
+          },
+          complete: () => {
+          }
+        });
+        //................
+      }
+    }
+    if (!this.selectedServiceNumberRecordForExcel && this.selectedFormulaRecord && this.resultAfterTest) {
+      const newRecord: MainItem = {
+        //
+        invoiceMainItemCode: 0,
+        //
+        serviceNumberCode: mainItem.serviceNumberCode,
+        unitOfMeasurementCode: mainItem.unitOfMeasurementCode,
+        currencyCode: mainItem.currencyCode,
+        description: mainItem.description,
+
+        formulaCode: this.selectedFormula,
+        quantity: this.resultAfterTest,
+        // quantity: item.quantity,
+        amountPerUnit: mainItem.amountPerUnit,
+        total: mainItem.total,
+        profitMargin: mainItem.profitMargin,
+        totalWithProfit: mainItem.totalWithProfit,
+        doNotPrint: mainItem.doNotPrint,
+        Type: '',
+        isPersisted: false,
+        // subItems: []
+        subItems: mainItem.subItems
+      }
+      console.log(newRecord);
+      if (newRecord.quantity === 0) {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: ' Quantity is required',
+          life: 3000
+        });
+      }
+      else {
+        console.log(newRecord);
+        //................
+        const bodyRequest: any = {
+          quantity: newRecord.quantity,
+          amountPerUnit: newRecord.amountPerUnit,
+        };
+        if (newRecord.profitMargin && newRecord.profitMargin !== 0) {
+          bodyRequest.profitMargin = newRecord.profitMargin;
+        }
+        this._ApiService.post<any>(`/total`, bodyRequest).subscribe({
+          next: (res) => {
+            console.log('mainitem with total:', res);
+            newRecord.total = res.total;
+            newRecord.amountPerUnitWithProfit = res.amountPerUnitWithProfit;
+            newRecord.totalWithProfit = res.totalWithProfit;
+            console.log(' Record:', newRecord);
+            const filteredRecord = Object.fromEntries(
+              Object.entries(newRecord).filter(([_, value]) => {
+                return value !== '' && value !== 0 && value !== undefined && value !== null;
+              })
+            ) as MainItem;
+            console.log(filteredRecord);
+            this.addMainItem(filteredRecord);
+
+            this.mainItemsRecords = [...this.mainItemsRecords];
+            this.savedInMemory = true;
+            this.updateTotalValueAfterAction();
+            console.log(this.mainItemsRecords);
+            this.resetNewMainItem();
+            this.selectedServiceNumberRecordForExcel = undefined;
+            this.selectedFormula = '';
+            this.selectedFormulaRecord = undefined;
+            this.resultAfterTest = undefined;
+
+            const index = this.parsedData.findIndex(item => item.invoiceMainItemCode === mainItem.invoiceMainItemCode);
+            if (index !== -1) {
+              this.parsedData.splice(index, 1);
+            }
+          }, error: (err) => {
+            console.log(err);
+          },
+          complete: () => {
+          }
+        });
+        //................
+      }
+    }
+    if (this.selectedServiceNumberRecordForExcel && !this.selectedFormulaRecord && !this.resultAfterTest) {
+      const newRecord: MainItem = {
+        //
+        invoiceMainItemCode: 0,
+        //
+        serviceNumberCode: mainItem.serviceNumberCode,
+        unitOfMeasurementCode: this.selectedServiceNumberRecordForExcel.unitOfMeasurementCode,
+        currencyCode: mainItem.currencyCode,
+        description: this.selectedServiceNumberRecordForExcel.description,
+
+        formulaCode: mainItem.formulaCode,
+        quantity: mainItem.quantity,
+        amountPerUnit: mainItem.amountPerUnit,
+        total: mainItem.total,
+        profitMargin: mainItem.profitMargin,
+        totalWithProfit: mainItem.totalWithProfit,
+        doNotPrint: mainItem.doNotPrint,
+        Type: '',
+        isPersisted: false,
+        // subItems: []
+        subItems: mainItem.subItems
+      }
+      console.log(newRecord);
+      if (newRecord.quantity === 0) {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: ' Quantity is required',
+          life: 3000
+        });
+      }
+      else {
+        console.log(newRecord);
+        //................
+        const bodyRequest: any = {
+          quantity: newRecord.quantity,
+          amountPerUnit: newRecord.amountPerUnit,
+        };
+        if (newRecord.profitMargin && newRecord.profitMargin !== 0) {
+          bodyRequest.profitMargin = newRecord.profitMargin;
+        }
+        this._ApiService.post<any>(`/total`, bodyRequest).subscribe({
+          next: (res) => {
+            console.log('mainitem with total:', res);
+            newRecord.total = res.total;
+            newRecord.amountPerUnitWithProfit = res.amountPerUnitWithProfit;
+            newRecord.totalWithProfit = res.totalWithProfit;
+            console.log(' Record:', newRecord);
+            const filteredRecord = Object.fromEntries(
+              Object.entries(newRecord).filter(([_, value]) => {
+                return value !== '' && value !== 0 && value !== undefined && value !== null;
+              })
+            ) as MainItem;
+            console.log(filteredRecord);
+            this.addMainItem(filteredRecord);
+
+            this.mainItemsRecords = [...this.mainItemsRecords];
+            this.savedInMemory = true;
+            this.updateTotalValueAfterAction();
+            console.log(this.mainItemsRecords);
+            this.resetNewMainItem();
+            this.selectedServiceNumberRecordForExcel = undefined;
+            this.selectedFormula = '';
+            this.selectedFormulaRecord = undefined;
+            this.resultAfterTest = undefined;
+
+            const index = this.parsedData.findIndex(item => item.invoiceMainItemCode === mainItem.invoiceMainItemCode);
+            if (index !== -1) {
+              this.parsedData.splice(index, 1);
+            }
+          }, error: (err) => {
+            console.log(err);
+          },
+          complete: () => {
+          }
+        });
+        //................
+      }
+    }
+    if (!this.selectedServiceNumberRecordForExcel && !this.selectedFormulaRecord && !this.resultAfterTest) {
+      const newRecord: MainItem = {
+        //
+        invoiceMainItemCode: 0,
+        //
+        serviceNumberCode: mainItem.serviceNumberCode,
+        unitOfMeasurementCode: mainItem.unitOfMeasurementCode,
+        currencyCode: mainItem.currencyCode,
+        description: mainItem.description,
+
+        formulaCode: mainItem.formulaCode,
+        quantity: mainItem.quantity,
+        amountPerUnit: mainItem.amountPerUnit,
+        total: mainItem.total,
+        profitMargin: mainItem.profitMargin,
+        totalWithProfit: mainItem.totalWithProfit,
+        doNotPrint: mainItem.doNotPrint,
+        Type: '',
+        isPersisted: false,
+        //subItems: []
+        subItems: mainItem.subItems
+      }
+      console.log(newRecord);
+      if (newRecord.quantity === 0) {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: ' Quantity is required',
+          life: 3000
+        });
+      }
+      else {
+        console.log(newRecord);
+        //................
+        const bodyRequest: any = {
+          quantity: newRecord.quantity,
+          amountPerUnit: newRecord.amountPerUnit,
+        };
+        if (newRecord.profitMargin && newRecord.profitMargin !== 0) {
+          bodyRequest.profitMargin = newRecord.profitMargin;
+        }
+        this._ApiService.post<any>(`/total`, bodyRequest).subscribe({
+          next: (res) => {
+            console.log('mainitem with total:', res);
+            newRecord.total = res.total;
+            newRecord.amountPerUnitWithProfit = res.amountPerUnitWithProfit;
+            newRecord.totalWithProfit = res.totalWithProfit;
+            console.log(' Record:', newRecord);
+            const filteredRecord = Object.fromEntries(
+              Object.entries(newRecord).filter(([_, value]) => {
+                return value !== '' && value !== 0 && value !== undefined && value !== null;
+              })
+            ) as MainItem;
+            console.log(filteredRecord);
+            this.addMainItem(filteredRecord);
+
+            this.mainItemsRecords = [...this.mainItemsRecords];
+            this.savedInMemory = true;
+            this.updateTotalValueAfterAction();
+            console.log(this.mainItemsRecords);
+            this.resetNewMainItem();
+            this.selectedServiceNumberRecordForExcel = undefined;
+            this.selectedFormula = '';
+            this.selectedFormulaRecord = undefined;
+            this.resultAfterTest = undefined;
+
+            const index = this.parsedData.findIndex(item => item.invoiceMainItemCode === mainItem.invoiceMainItemCode);
+            if (index !== -1) {
+              this.parsedData.splice(index, 1);
+            }
+          }, error: (err) => {
+            console.log(err);
+          },
+          complete: () => {
+          }
+        });
+        //................
+      }
+    }
+  }
+  cancelFromExcel(item: any): void {
+    this.parsedData = this.parsedData.filter(i => i !== item);
+  }
+
+  // Excel Import:
+  parsedData: MainItem[] = []; // Parsed data from the Excel file
+  displayedColumns: string[] = []; // Column headers from the Excel file
+
+
+  // worked function without subitems:
+  // onFileSelect(event: any, fileUploader: any) {
+  //   console.log('Records before :', this.parsedData);
+
+  //   const file = event.files[0];
+  //   const reader = new FileReader();
+
+  //   reader.onload = (e: any) => {
+  //     const binaryData = e.target.result;
+  //     const workbook = XLSX.read(binaryData, { type: 'binary' });
+
+  //     const sheetName = workbook.SheetNames[0];
+  //     const sheet = workbook.Sheets[sheetName];
+
+  //     const jsonData: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+  //     if (jsonData.length > 0) {
+  //       this.displayedColumns = jsonData[0].filter((col: any) => typeof col === 'string' && col.trim() !== '') as string[];
+  //       this.parsedData = jsonData
+  //         .slice(1) // Skip the header row
+  //         .map((row: any[]) => {
+  //           const rowData: any = {};
+  //           this.displayedColumns.forEach((col, index) => {
+  //             rowData[col] = row[index] !== undefined ? row[index] : '';
+  //           });
+  //           return rowData;
+  //         })
+  //         .filter((rowData: any) => rowData.Type === 'Main Item'); // Filter only "Main Item" rows
+
+  //       console.log('Filtered Records :', this.parsedData);
+  //       this.messageService.add({
+  //         severity: 'success',
+  //         summary: 'Success',
+  //         detail: 'Main Item records copied from the Excel sheet successfully!',
+  //         life: 4000,
+  //       });
+  //     } else {
+  //       this.displayedColumns = [];
+  //       this.parsedData = [];
+  //     }
+
+  //     fileUploader.clear();
+  //   };
+
+  //   reader.readAsBinaryString(file);
+  // }
+
+  // new with subitems:
+  onFileSelect(event: any, fileUploader: any) {
+    console.log('Records before :', this.parsedData);
+
+    const file = event.files[0];
+    const reader = new FileReader();
+
+    reader.onload = (e: any) => {
+      const binaryData = e.target.result;
+      const workbook = XLSX.read(binaryData, { type: 'binary' });
+
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+
+      const jsonData: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+      if (jsonData.length > 0) {
+        this.displayedColumns = jsonData[0].filter((col: any) => typeof col === 'string' && col.trim() !== '') as string[];
+
+        const rawParsedData = jsonData.slice(1).map((row: any[]) => {
+          const rowData: any = {};
+          this.displayedColumns.forEach((col, index) => {
+            rowData[col] = row[index] !== undefined ? row[index] : '';
+          });
+          return rowData;
+        });
+
+        // Parse Main Items and their related Sub Items
+        this.parsedData = [];
+        let currentMainItem: any = null;
+
+        rawParsedData.forEach((rowData: any) => {
+          if (rowData.Type === 'Main Item') {
+            // Start a new Main Item
+            currentMainItem = { ...rowData, subItems: [] };
+            this.parsedData.push(currentMainItem);
+          } else if (rowData.Type === 'Sub Item' && currentMainItem) {
+            // Add Sub Item to the current Main Item
+            currentMainItem.subItems.push(rowData);
+          }
+        });
+
+        console.log('Hierarchical Parsed Data :', this.parsedData);
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Success',
+          detail: 'Main Item and related Sub Item records processed successfully!',
+          life: 4000,
+        });
+      } else {
+        this.displayedColumns = [];
+        this.parsedData = [];
+      }
+
+      fileUploader.clear();
+    };
+
+    reader.readAsBinaryString(file);
+  }
+
   updateProfitMargin(value: number) {
     console.log(value);
     if (value !== null && value < 0) {
@@ -102,11 +1038,13 @@ export class InvoiceComponent {
         life: 4000,
       });
     } else {
-      for (const row of this.selectedRowsForProfit) {
+
+      // for (const row of this.selectedRowsForProfit) {
+      for (const row of this.selectedTenderingMainItems) {
         row.profitMargin = value;
         const {
           invoiceMainItemCode,
-          totalWithProfit,
+          // totalWithProfit,
           ...mainItemWithoutMainItemCode
         } = row;
         const updatedMainItem = this.removePropertiesFrom(
@@ -162,8 +1100,9 @@ export class InvoiceComponent {
             console.log(err);
           },
           complete: () => {
-            this.selectedRowsForProfit = [];
-            this.selectedMainItems = [];
+            this.selectedTenderingMainItems = [];
+            // this.selectedRowsForProfit = [];
+            // this.selectedMainItems = [];
           },
         });
       }
@@ -175,25 +1114,7 @@ export class InvoiceComponent {
       });
     }
   }
-
-  constructor(
-    private cdr: ChangeDetectorRef,
-    private router: Router,
-    private _ApiService: ApiService,
-    private _InvoiceService: InvoiceService,
-    private messageService: MessageService,
-    private confirmationService: ConfirmationService
-  ) {
-    this.documentNumber =
-      this.router.getCurrentNavigation()?.extras.state?.['documentNumber'];
-    this.itemNumber =
-      this.router.getCurrentNavigation()?.extras.state?.['itemNumber'];
-    this.customerId =
-      this.router.getCurrentNavigation()?.extras.state?.['customerId'];
-    this.cloudCurrency = this.router.getCurrentNavigation()?.extras.state?.['currency'];
-    console.log(this.documentNumber, this.itemNumber, this.customerId,this.currency);
-  }
-  // Calculate Total Value:
+  // Calculate Header Total Value:
   calculateTotalValue(): void {
     console.log(this.mainItemsRecords);
     this.totalValue = this.mainItemsRecords.reduce(
@@ -204,84 +1125,6 @@ export class InvoiceComponent {
   updateTotalValueAfterAction(): void {
     this.calculateTotalValue();
     console.log('Updated Total Value:', this.totalValue);
-  }
-
-  ngOnInit() {
-    this._ApiService
-      .get<ServiceMaster[]>('servicenumbers')
-      .subscribe((response) => {
-        this.recordsServiceNumber = response;
-        //.filter(record => record.deletionIndicator === false);
-      });
-    this._ApiService.get<any[]>('formulas').subscribe((response) => {
-      this.recordsFormula = response;
-    });
-    this._ApiService.get<any[]>('currencies').subscribe((response) => {
-      this.recordsCurrency = response;
-    });
-    this._ApiService.get<any[]>('measurements').subscribe((response) => {
-      this.recordsUnitOfMeasure = response;
-    });
-    if (this.savedInMemory) {
-      this.mainItemsRecords = [
-        ...this._InvoiceService.getMainItems(this.documentNumber),
-      ];
-      console.log(this.mainItemsRecords);
-    }
-    if (this.savedDBApp) {
-      this.getCloudDocument();
-    } else {
-      this.getCloudDocument();
-    }
-
-    this._ApiService.get<SubItem[]>('subitems').subscribe((response) => {
-      this.subItemsRecords = response;
-      this.loadingSubItems = false;
-    });
-  }
-
-  getCloudDocument() {
-    this._ApiService
-      .get<MainItem[]>(
-        `mainitems/referenceid?referenceId=${this.documentNumber}`
-      )
-      .subscribe({
-        next: (res) => {
-          this.mainItemsRecords = res
-            .map((item) => ({ ...item, isPersisted: true }))
-            .sort((a, b) => a.invoiceMainItemCode - b.invoiceMainItemCode);
-          this.itemText = this.mainItemsRecords[0].salesQuotationItemText
-            ? this.mainItemsRecords[0].salesQuotationItemText
-            : '';
-          console.log(this.itemText);
-          console.log(this.mainItemsRecords);
-          console.log(this.mainItemsRecords[0].subItems);
-          console.log(this.mainItemsRecords[0].subItems.length);
-
-          this.loading = false;
-          this.totalValue = this.mainItemsRecords.reduce(
-            (sum, record) => sum + record.totalWithProfit,
-            0
-          );
-          console.log('Total Value:', this.totalValue);
-          // this.cdr.detectChanges();
-        },
-        error: (err) => {
-          console.log(err);
-          console.log(err.status);
-          if (err.status == 404) {
-            this.mainItemsRecords = [];
-            this.loading = false;
-            this.totalValue = this.mainItemsRecords.reduce(
-              (sum, record) => sum + record.totalWithProfit,
-              0
-            );
-            console.log('Total Value:', this.totalValue);
-            //this.cdr.detectChanges();
-          }
-        },
-        complete: () => {},
-      });
   }
 
   // For Add new  Main Item
@@ -373,9 +1216,9 @@ export class InvoiceComponent {
         error: (err) => {
           console.log(err);
         },
-        complete: () => {},
+        complete: () => { },
       });
-    } 
+    }
     else if (
       !this.selectedServiceNumberRecord &&
       this.selectedFormulaRecord &&
@@ -451,7 +1294,7 @@ export class InvoiceComponent {
         error: (err) => {
           console.log(err);
         },
-        complete: () => {},
+        complete: () => { },
       });
     } else if (
       this.selectedServiceNumberRecord &&
@@ -464,7 +1307,7 @@ export class InvoiceComponent {
         unitOfMeasurementCode:
           this.selectedServiceNumberRecord.unitOfMeasurementCode,
         // this.selectedServiceNumberRecord.baseUnitOfMeasurement,
-        currencyCode:this.cloudCurrency,
+        currencyCode: this.cloudCurrency,
         // this.selectedCurrency,
         description: this.selectedServiceNumberRecord.description,
         quantity: this.newMainItem.quantity,
@@ -528,7 +1371,7 @@ export class InvoiceComponent {
         error: (err) => {
           console.log(err);
         },
-        complete: () => {},
+        complete: () => { },
       });
     } else if (
       this.selectedServiceNumberRecord &&
@@ -609,7 +1452,7 @@ export class InvoiceComponent {
         error: (err) => {
           console.log(err);
         },
-        complete: () => {},
+        complete: () => { },
       });
     }
   }
@@ -772,7 +1615,7 @@ export class InvoiceComponent {
           error: (err) => {
             console.log(err);
           },
-          complete: () => {},
+          complete: () => { },
         });
       }
     } else if (
@@ -913,7 +1756,7 @@ export class InvoiceComponent {
           error: (err) => {
             console.log(err);
           },
-          complete: () => {},
+          complete: () => { },
         });
       }
     } else if (
@@ -927,7 +1770,7 @@ export class InvoiceComponent {
         unitOfMeasurementCode:
           this.selectedServiceNumberRecordSubItem.unitOfMeasurementCode,
         //this.selectedServiceNumberRecordSubItem.baseUnitOfMeasurement,
-        currencyCode:this.cloudCurrency,
+        currencyCode: this.cloudCurrency,
         // this.selectedCurrencySubItem,
         description: this.selectedServiceNumberRecordSubItem.description,
         quantity: this.newSubItem.quantity,
@@ -1054,7 +1897,7 @@ export class InvoiceComponent {
           error: (err) => {
             console.log(err);
           },
-          complete: () => {},
+          complete: () => { },
         });
       }
     } else if (
@@ -1197,7 +2040,7 @@ export class InvoiceComponent {
           error: (err) => {
             console.log(err);
           },
-          complete: () => {},
+          complete: () => { },
         });
       }
     }
@@ -1260,7 +2103,7 @@ export class InvoiceComponent {
           },
         });
       },
-      reject: () => {},
+      reject: () => { },
     });
   }
 
@@ -1331,7 +2174,7 @@ export class InvoiceComponent {
         error: (err) => {
           console.log(err);
         },
-        complete: () => {},
+        complete: () => { },
       });
       ///...................
 
@@ -1409,7 +2252,7 @@ export class InvoiceComponent {
         error: (err) => {
           console.log(err);
         },
-        complete: () => {},
+        complete: () => { },
       });
       ///...................
 
@@ -1478,7 +2321,7 @@ export class InvoiceComponent {
         error: (err) => {
           console.log(err);
         },
-        complete: () => {},
+        complete: () => { },
       });
       ///...................
 
@@ -1531,7 +2374,7 @@ export class InvoiceComponent {
         error: (err) => {
           console.log(err);
         },
-        complete: () => {},
+        complete: () => { },
       });
       ///...................
 
@@ -1843,7 +2686,7 @@ export class InvoiceComponent {
         error: (err) => {
           console.log(err);
         },
-        complete: () => {},
+        complete: () => { },
       });
       ///...................
     }
@@ -1957,7 +2800,7 @@ export class InvoiceComponent {
         error: (err) => {
           console.log(err);
         },
-        complete: () => {},
+        complete: () => { },
       });
       ///...................
     }
@@ -2067,7 +2910,7 @@ export class InvoiceComponent {
         error: (err) => {
           console.log(err);
         },
-        complete: () => {},
+        complete: () => { },
       });
       ///...................
     }
@@ -2099,29 +2942,29 @@ export class InvoiceComponent {
           for (const record of this.selectedTenderingMainItems) {
             console.log(record);
             this.mainItemsRecords = this.mainItemsRecords.filter(item => item.invoiceMainItemCode !== record.invoiceMainItemCode);
-          // this.mainItemsRecords = this.mainItemsRecords.filter((item) => {
-          //   const isSelected = this.selectedTenderingMainItems.some(
-          //     (selected) =>
-          //       selected.invoiceMainItemCode === item.invoiceMainItemCode
-          //   );
-          //   console.log(
-          //     `Item ${item.invoiceMainItemCode} is selected: ${isSelected}`
-          //   );
-          //   return !isSelected;
-          // });
-          this.mainItemsRecords = [...this.mainItemsRecords];
-          console.log('MainItems after deletion:', this.mainItemsRecords);
-          this.updateTotalValueAfterAction();
-         // this.selectedTenderingMainItems = [];
-          this.cdr.detectChanges();
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Success',
-            detail: 'MainItems deleted.',
-            life: 3000,
-          });
-          this.selectedTenderingMainItems = [];
-        }
+            // this.mainItemsRecords = this.mainItemsRecords.filter((item) => {
+            //   const isSelected = this.selectedTenderingMainItems.some(
+            //     (selected) =>
+            //       selected.invoiceMainItemCode === item.invoiceMainItemCode
+            //   );
+            //   console.log(
+            //     `Item ${item.invoiceMainItemCode} is selected: ${isSelected}`
+            //   );
+            //   return !isSelected;
+            // });
+            this.mainItemsRecords = [...this.mainItemsRecords];
+            console.log('MainItems after deletion:', this.mainItemsRecords);
+            this.updateTotalValueAfterAction();
+            // this.selectedTenderingMainItems = [];
+            this.cdr.detectChanges();
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Success',
+              detail: 'MainItems deleted.',
+              life: 3000,
+            });
+            this.selectedTenderingMainItems = [];
+          }
         },
       });
     }
@@ -2355,6 +3198,33 @@ export class InvoiceComponent {
       this.selectedServiceNumberRecord = undefined;
     }
   }
+  onServiceNumberChangeForModels(event: any, index: number) {
+    const currentItem = this.selectedModelSpecsDetails[index];
+    const selectedRecord = this.recordsServiceNumber.find(
+      (record) => record.serviceNumberCode === currentItem.serviceNumberCode
+    );
+    if (selectedRecord) {
+      this.selectedServiceNumberRecordForModels = selectedRecord;
+      // this.shortTextChangeAllowed =  this.selectedServiceNumberRecord?.shortTextChangeAllowed || false;
+      // this.shortText = '';
+    } else {
+      console.log('no service number');
+      this.selectedServiceNumberRecordForModels = undefined;
+    }
+  }
+  onServiceNumberChangeForExcelSheet(event: any, index: number): void {
+    const currentItem = this.parsedData[index];
+    const selectedRecord = this.recordsServiceNumber.find(record => record.serviceNumberCode === currentItem.serviceNumberCode);
+    if (selectedRecord) {
+      this.selectedServiceNumberRecordForExcel = selectedRecord
+      // this.shortTextChangeAllowed = this.selectedServiceNumberRecord?.shortTextChangeAllowed || false;
+      // this.shortText = ""
+    }
+    else {
+      console.log("no service number");
+      this.selectedServiceNumberRecordForExcel = undefined;
+    }
+  }
   //In Update to handle shortTextChangeAlowlled Flag
   onServiceNumberUpdateChange(event: any) {
     const updateSelectedRecord = this.recordsServiceNumber.find(
@@ -2486,6 +3356,7 @@ export class InvoiceComponent {
       mainItem.subItems?.forEach((subItem) => {
         transformed.push({
           Type: 'Sub Item',
+          invoiceSubItemCode: subItem.invoiceSubItemCode,
           serviceNumberCode: subItem.serviceNumberCode,
           description: subItem.description,
           quantity: subItem.quantity,
